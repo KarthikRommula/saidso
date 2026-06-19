@@ -25,6 +25,7 @@ class CallContext:
     now: Optional[date] = None
     call_id: Optional[str] = None
     ledger: Any = None  # AttestationLog | None (avoid import cycle)
+    tools: Any = None  # provenance.ToolLedger | None (avoid import cycle)
 
 
 _CURRENT: contextvars.ContextVar[Optional[CallContext]] = contextvars.ContextVar(
@@ -52,6 +53,7 @@ def call_context(
     now: Optional[date] = None,
     call_id: Optional[str] = None,
     ledger: Any = None,
+    tools: Any = None,
 ):
     """Scope a :class:`CallContext` for the duration of a call.
 
@@ -66,6 +68,7 @@ def call_context(
         now=now,
         call_id=call_id,
         ledger=ledger,
+        tools=tools,
     )
     token = _CURRENT.set(ctx)
     try:

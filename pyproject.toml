@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "saidso"
-version = "0.1.0"
+version = "0.3.0"
 description = "A grounding firewall for action-taking AI agents: refuse any tool argument the user never actually said, with a transcript-linked audit trail."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "saidso contributors" }]
+authors = [{ name = "Karthik Rommula" }]
 keywords = [
     "ai", "agents", "voice", "guardrails", "grounding", "hallucination",
     "tool-use", "llm", "provenance", "audit", "firewall",
@@ -28,8 +28,8 @@ fast = ["rapidfuzz>=3.0"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "rapidfuzz>=3.0"]
 
 [project.urls]
-Homepage = "https://github.com/your-org/saidso"
-Issues = "https://github.com/your-org/saidso/issues"
+Homepage = "https://github.com/KarthikRommula/saidso"
+Issues = "https://github.com/KarthikRommula/saidso/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["saidso"]

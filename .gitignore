@@ -12,7 +12,9 @@ venv/
 env/
 *.jsonl
 .env
+.env.publish
 .DS_Store
 attestations.jsonl
 .claude/
 /tests
+/graphify-out

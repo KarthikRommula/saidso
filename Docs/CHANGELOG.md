@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.3.0
+
+Multi-source provenance + a best-effort speech monitor for the residual
+"agent said a name it made up" gap.
+
+### New
+- **Multi-source `from_tool`** — a provenance-grounded argument may come from any
+  of several tools: `from_tool(("list_doctors","doctor_id"),
+  ("list_appointments","doctor_id"))`. Candidates from all sources are pooled.
+  The single-source form `from_tool(tool, key, ...)` is unchanged.
+- **`saidso.speech`** (PARTIAL, best-effort) — `find_ungrounded_names` /
+  `check_spoken_names`: a *post-turn* check that flags honorific+name mentions
+  ("Dr. X") in the agent's transcript that aren't in the ground-truth set a tool
+  returned. Reactive and heuristic — pair it with provenance grounding, which
+  makes the *action* safe deterministically. Not a guarantee.
+
+## 0.2.1
+
+Performance. No API or behavior change.
+
+- `datetime-minute` normalizer uses a regex fast-path instead of full
+  `datetime.fromisoformat` parsing per candidate — ~4.5x faster slot
+  reconciliation (≈24us → ≈5us), and now handles a trailing `Z` / any offset
+  without requiring Python 3.11. Falls back to a real parse for non-standard
+  shapes. Provenance-grounded tool calls drop to ≈13us end-to-end.
+
+## 0.2.0
+
+Tool-output provenance grounding — ground a tool argument against what an
+**earlier tool returned** this call, not just against what the caller said.
+Absorbs the two most common realtime voice-agent bugs: the model inventing an
+opaque id, or reconstructing a value (a timestamp from "5 PM", a phone number
+from digits) instead of echoing the canonical one a tool handed it.
+
+### New
+- `@grounded_outputs(arg=from_tool("list_doctors", "doctor_id"))` decorator:
+  blocks-and-steers when an argument doesn't trace to a real tool output, and
+  rewrites a passing argument to its canonical value before the body runs.
+- `ToolLedger`: records what tools returned this call (`record` / `candidates`);
+  passed to `call_context(..., tools=ledger)`.
+- `reconcile()` engine + `from_tool` / `FromTool` specs. Type-aware normalizers:
+  `exact`, `casefold`, `e164`, `datetime-minute`, `money`.
+- Fail-closed contract: a value passes only via raw-exact, unique-normalized, or
+  single-candidate resolution — the firewall never forwards a non-tool value.
+
 ## 0.1.0
 
 First release. A grounding firewall for action-taking agents.

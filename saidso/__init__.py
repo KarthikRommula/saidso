@@ -26,10 +26,25 @@ from .attestation import Attestation, AttestationLog
 from .context import CallContext, call_context, get_context, set_context, reset_context
 from .grounding import GroundingBlocked, GroundingConfig, grounded
 from .policy import DEFAULT_THRESHOLDS, Policy
+from .provenance import (
+    FromTool,
+    Resolution,
+    Status,
+    ToolLedger,
+    from_tool,
+    grounded_outputs,
+    reconcile,
+)
 from .result import ArgFinding, GroundingResult, Span, SteerBack
+from .speech import (
+    SpokenName,
+    check_spoken_names,
+    find_name_mentions,
+    find_ungrounded_names,
+)
 from .transcript import AGENT, SYSTEM, USER, Transcript, Turn
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "grounded",
@@ -48,6 +63,17 @@ __all__ = [
     "GroundingResult",
     "GroundingConfig",
     "GroundingBlocked",
+    "grounded_outputs",
+    "from_tool",
+    "FromTool",
+    "ToolLedger",
+    "reconcile",
+    "Resolution",
+    "Status",
+    "find_ungrounded_names",
+    "check_spoken_names",
+    "find_name_mentions",
+    "SpokenName",
     "Span",
     "ArgFinding",
     "Attestation",
