@@ -70,6 +70,17 @@ def test_docs_unknown_topic_errors(capsys):
     assert "no docs topic" in capsys.readouterr().err
 
 
+def test_docs_dump_writes_all_pages(tmp_path, capsys):
+    dest = tmp_path / "out"  # nested path -> also exercises mkdir(parents=True)
+    assert main(["docs", "--dump", str(dest)]) == 0
+    written = {p.name for p in dest.glob("*.md")}
+    # Every known topic is written, and pages are non-empty.
+    for topic in ("overview", "writes", "reads", "policies", "integrate"):
+        assert f"{topic}.md" in written
+        assert (dest / f"{topic}.md").read_text(encoding="utf-8").strip()
+    assert "Wrote" in capsys.readouterr().out
+
+
 def test_upgrade_invokes_pip(monkeypatch, capsys):
     captured = {}
 

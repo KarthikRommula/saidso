@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6
+
+CLI: export docs to a folder.
+
+### New
+- **`saidso docs --dump [DIR]`** — write all bundled doc pages as `.md` files
+  into `DIR` (created if missing; default `saidso-docs/`). The terminal-reader
+  forms (`saidso docs`, `saidso docs <topic>`, `saidso docs --list`) are
+  unchanged.
+
 ## 0.4.5
 
 CLI: uninstall command.

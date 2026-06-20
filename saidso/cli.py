@@ -84,6 +84,18 @@ def _cmd_docs(args: argparse.Namespace) -> int:
         for t in topics:
             print(f"  saidso docs {t}")
         return 0
+    if args.dump is not None:
+        dest = Path(args.dump)
+        dest.mkdir(parents=True, exist_ok=True)
+        written: list[str] = []
+        for t in topics:
+            name = f"{t}.md"
+            (dest / name).write_text(
+                (_docs_dir() / name).read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            written.append(name)
+        print(f"Wrote {len(written)} docs to {dest}/: {', '.join(written)}")
+        return 0
     topic = args.topic or _DEFAULT_TOPIC
     # Resolve against the known topic list only — never build a path from raw
     # user input (guards against `saidso docs ../../something` traversal).
@@ -158,6 +170,10 @@ def build_parser() -> argparse.ArgumentParser:
     dc = sub.add_parser("docs", help="show saidso documentation in the terminal")
     dc.add_argument("topic", nargs="?", help="topic to show (default: overview)")
     dc.add_argument("--list", action="store_true", help="list all topics")
+    dc.add_argument(
+        "--dump", nargs="?", const="saidso-docs", default=None, metavar="DIR",
+        help="write all doc pages into DIR (created if missing; default: saidso-docs)",
+    )
     dc.set_defaults(func=_cmd_docs)
 
     qs = sub.add_parser(
