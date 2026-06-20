@@ -23,7 +23,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from . import matcher
+from ._matching import matcher
 from .context import CallContext, get_context
 from .policy import DEFAULT_THRESHOLDS, Policy
 from .result import ArgFinding, GroundingResult, SteerBack
@@ -152,13 +152,20 @@ def grounded(
             if failed:
                 steer = SteerBack(action=fn.__name__, failed=failed, grounded=passed)
                 logger.info(
-                    "saidso blocked %s: ungrounded args %s",
+                    "blocked %s: ungrounded %s",
                     fn.__name__, [f.name for f in failed],
+                    extra={"saidso_event": "block", "saidso_action": fn.__name__,
+                           "saidso_args": [f.name for f in failed]},
                 )
                 return steer
 
             if ctx.ledger is not None:
                 ctx.ledger.build(fn.__name__, passed, call_id=ctx.call_id)
+            logger.info(
+                "grounded %s: %s", fn.__name__, [f.name for f in passed],
+                extra={"saidso_event": "pass", "saidso_action": fn.__name__,
+                       "saidso_args": [f.name for f in passed]},
+            )
             return _Pass(args, kwargs)
 
         if inspect.iscoroutinefunction(fn):

@@ -176,7 +176,12 @@ class ToolLedger:
         self._rows[tool] = out
 
     def candidates(self, tool: str, key: str) -> List[Any]:
-        return [r.get(key) for r in self._rows.get(tool, []) if r.get(key) is not None]
+        out: List[Any] = []
+        for r in self._rows.get(tool, ()):  # single dict.get per row (hot path)
+            v = r.get(key)
+            if v is not None:
+                out.append(v)
+        return out
 
     def __len__(self) -> int:
         return sum(len(v) for v in self._rows.values())
@@ -281,6 +286,20 @@ def reconcile(
 # --------------------------------------------------------------------------- #
 
 
+class _Call:
+    """A resolved call: positional args + keyword args ready to invoke the body.
+
+    Lighter than ``inspect.BoundArguments`` for the hot path; exposes the same
+    ``.args`` / ``.kwargs`` the wrappers splat into the wrapped function.
+    """
+
+    __slots__ = ("args", "kwargs")
+
+    def __init__(self, args, kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+
 def grounded_outputs(**specs: FromTool) -> Callable:
     """Ground tool arguments against prior tool output (see module docstring).
 
@@ -307,20 +326,21 @@ def grounded_outputs(**specs: FromTool) -> Callable:
                     f"@grounded_outputs on {fn.__name__}{sig}: these guarded arguments are "
                     f"not parameters of the function: {unknown}. Check for typos."
                 )
+        # Frozen at decoration time so the hot path touches tuples, not the dict.
+        spec_items = tuple(specs.items())
+        spec_names = tuple(specs)
 
-        def evaluate(args, kwargs):
-            ctx = get_context() or CallContext()
-            ledger = getattr(ctx, "tools", None)
-            try:
-                bound = sig.bind(*args, **kwargs)
-            except TypeError:
-                return None  # let the real function raise its own clear error
-            bound.apply_defaults()
+        def _reconcile_args(get_value, ledger):
+            """Reconcile every guarded arg via ``get_value(name)``.
 
+            Returns ``(failed, passed, rewrites)`` — ``rewrites`` maps each
+            passing arg to its canonical tool value. Shared by both call paths.
+            """
             failed: List[ArgFinding] = []
             passed: List[ArgFinding] = []
-            for name, spec in specs.items():
-                value = bound.arguments.get(name)
+            rewrites: Dict[str, Any] = {}
+            for name, spec in spec_items:
+                value = get_value(name)
                 cands: List[Any] = []
                 if ledger is not None:
                     for tool, key in spec.sources:
@@ -342,21 +362,58 @@ def grounded_outputs(**specs: FromTool) -> Callable:
                     reason=res.reason,
                 )
                 if res.passed:
-                    bound.arguments[name] = res.canonical  # rewrite to canonical
+                    rewrites[name] = res.canonical  # rewrite to canonical
                     passed.append(ArgFinding(name=name, result=gr))
                 else:
                     failed.append(ArgFinding(name=name, result=gr))
+            return failed, passed, rewrites
 
+        def _finish(ctx, failed, passed):
             if failed:
                 logger.info(
-                    "saidso blocked %s: ungrounded tool args %s",
+                    "blocked %s: ungrounded tool args %s",
                     fn.__name__, [f.name for f in failed],
+                    extra={"saidso_event": "block", "saidso_action": fn.__name__,
+                           "saidso_args": [f.name for f in failed]},
                 )
                 return SteerBack(action=fn.__name__, failed=failed, grounded=passed)
-
             if ctx.ledger is not None:
                 ctx.ledger.build(fn.__name__, passed, call_id=ctx.call_id)
-            return bound
+            logger.info(
+                "grounded %s: %s", fn.__name__, [f.name for f in passed],
+                extra={"saidso_event": "pass", "saidso_action": fn.__name__,
+                       "saidso_args": [f.name for f in passed]},
+            )
+            return None  # passed
+
+        def evaluate(args, kwargs):
+            ctx = get_context() or CallContext()
+            ledger = getattr(ctx, "tools", None)
+
+            # Fast path: the realtime model passes tool args by keyword, so every
+            # guarded arg is in kwargs — reconcile in place, skip signature binding.
+            if kwargs and all(n in kwargs for n in spec_names):
+                failed, passed, rewrites = _reconcile_args(kwargs.__getitem__, ledger)
+                steer = _finish(ctx, failed, passed)
+                if steer is not None:
+                    return steer
+                if rewrites:
+                    kwargs = {**kwargs, **rewrites}
+                return _Call(args, kwargs)
+
+            # Slow path: positional guarded args / defaults — bind the signature.
+            try:
+                bound = sig.bind(*args, **kwargs)
+            except TypeError:
+                return None  # let the real function raise its own clear error
+            bound.apply_defaults()
+            failed, passed, rewrites = _reconcile_args(bound.arguments.get, ledger)
+            steer = _finish(ctx, failed, passed)
+            if steer is not None:
+                return steer
+            for name, canonical in rewrites.items():
+                bound.arguments[name] = canonical
+            return _Call(bound.args, bound.kwargs)
 
         if inspect.iscoroutinefunction(fn):
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.4.0
+
+Deterministic grounded speech — the production side of "reads". Make a
+consequential *spoken* fact 100% accurate by never letting the model say it:
+build the line from grounded data and speak it with your own TTS.
+
+### New
+- **`saidso.say`** — `render_spoken(template, ledger=..., **facts)` renders a
+  spoken line in which every dynamic fact is reconciled against real tool output
+  (the same fail-closed engine as `grounded_outputs`) and substituted with its
+  *canonical* value. If any fact can't be grounded, nothing is returned —
+  `UngroundedSpeech` is raised — so a fabricated value can never be spoken.
+  `try_render_spoken(...)` returns `None` instead of raising.
+- **`fact(value, *sources, normalize=..., render=...)`** declares an interpolated
+  value, its tool-output provenance, and an optional deterministic renderer
+  (e.g. ISO timestamp -> "5:00 PM"). Unlike writes, `allow_single_candidate`
+  defaults to **False**: speaking the only name on file in place of one that was
+  never returned is the silent error reads must avoid.
+- **TTS-agnostic.** saidso never produces audio — it returns the verified string;
+  you speak it with whatever TTS you bring. This is the deterministic complement
+  to the best-effort `find_ungrounded_names` post-turn monitor.
+
+### Project structure
+- Reorganized the package for clarity (public API unchanged — `from saidso import …`
+  is identical). Reads moved under a `speech/` subpackage (`render` = the
+  deterministic guarantee, `monitor` = best-effort detection); the fuzzy-matching
+  engine moved to a private `_matching/` subpackage (`matcher`, `normalize`,
+  `fuzz`). Added `Docs/ARCHITECTURE.md` (layout + vocabulary reference). The
+  quickstart demo now lives in `examples/quickstart.py` (it previously shadowed
+  the package as a root-level `saidso.py`).
+
+### Observability
+- Every decision now emits one structured event on the `saidso` logger
+  (`saidso_event` = `pass`/`block`, with `saidso_action`/`saidso_args`).
+- **`saidso.observe`** (zero-dependency) — `enable_pretty_logging()` for a
+  colored ✓/✗ live stream (auto-disables off a TTY / under `NO_COLOR`, enables
+  Windows VT mode), `EventRecorder` to capture the stream, and `summary()` for an
+  end-of-run counts + per-decision box.
+
+## 0.3.1
+
+Hot-path latency. No API or behaviour change — the fail-closed guarantee is
+identical.
+
+- **`@grounded_outputs` keyword fast path** — the realtime model passes tool
+  arguments by keyword, so the common call now reconciles directly against
+  `kwargs` and skips `inspect.Signature.bind` / `apply_defaults` entirely,
+  falling back to a full bind only for positional or defaulted guarded args.
+- **`ToolLedger.candidates`** does a single `dict.get` per row instead of two.
+- Net: a provenance-grounded write call drops to ≈12us end-to-end (p50 ≈11us)
+  — ~1/2000th of a single backend round trip.
+
 ## 0.3.0
 
 Multi-source provenance + a best-effort speech monitor for the residual

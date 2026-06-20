@@ -2,62 +2,84 @@
 
 **A grounding firewall for action-taking AI agents.**
 
-`saidso` sits between an AI agent and its consequential tools (book, transfer,
-prescribe, refund, update a record) and **refuses to let the agent commit any
-argument that isn't grounded in what the user actually said** — with a
-transcript-linked audit trail for every action that does run.
+`saidso` sits between an AI agent and its consequences and enforces one rule:
 
-> The name is the whole idea: an action only goes through if the user *said so*.
+> **Nothing is committed (a tool argument) or spoken (a fact) unless it traces
+> back to something real — what the user said, or what a tool returned.**
+> Anything ungrounded is blocked, before it can cause harm.
 
-```python
-from saidso import grounded, Policy
+The name is the whole idea: an action only goes through if the user *said so*.
 
-@grounded(
-    name=Policy.SPOKEN,      # must appear in the caller's speech
-    dob=Policy.SPOKEN,       # spoken naturally -> normalized to ISO
-    phone=Policy.CALLER_ID,  # comes from carrier metadata, not the mouth
-    visit_date=Policy.INFERABLE,  # "tomorrow" -> resolved from the clock
-)
-def register_patient(name, dob, phone, visit_date): ...
+```bash
+pip install saidso          # zero required dependencies
+pip install saidso[fast]    # optional: rapidfuzz for faster matching
 ```
+
+---
 
 ## The problem
 
-LLM voice/phone agents don't just talk — they *do things*. To do them, they
-call functions:
+LLM agents (especially voice/phone agents) don't just talk — they *do things* and
+*state facts*. Sometimes the model **makes things up**: an argument the caller
+never said, an appointment ID that doesn't exist, a doctor's name nobody offered.
+Today's frameworks execute the call and speak the words anyway — and a fabricated
+value lands in a real database, or a wrong fact reaches a real patient.
+
+Prompting ("never make up a DOB") is best-effort: it's the suspect judging itself,
+it leaves no proof, and it degrades as you add tools. `saidso` runs in **code, not
+the prompt** — it assumes the model *will* hallucinate and refuses to let it matter.
+
+---
+
+## Two guarantees
+
+### 1. Writes — what the agent *does*
+
+Guard a tool's arguments. They must trace to the caller's words **or** to real
+tool output. Fail-closed: ungrounded → the body never runs.
 
 ```python
-register_patient(name="John Doe", dob="1990-01-01", ...)
+from saidso import grounded, grounded_outputs, Policy, from_tool
+
+# Ground against the CONVERSATION
+@grounded(name=Policy.SPOKEN, dob=Policy.SPOKEN, phone=Policy.CALLER_ID)
+def register_patient(name, dob, phone): ...
+
+# Ground against an earlier TOOL'S OUTPUT (provenance)
+@grounded_outputs(
+    slot_start=from_tool("get_slots", "slot_start", normalize="datetime-minute")
+)
+def book_appointment(slot_start): ...
 ```
 
-Sometimes the model **fills in arguments the caller never said.** Today's
-frameworks (LiveKit, Vapi, Pipecat, LangGraph) execute the call anyway — and a
-fabricated name or date of birth lands in a real database.
+- A **fabricated** id/slot/name → blocked, the agent is steered to re-ask.
+- A value the model **rebuilt slightly wrong** (right time, wrong timezone) → it's
+  rewritten to the **canonical** value the tool actually returned, then committed.
 
-Prompting ("never make up a DOB") is best-effort. It's the *suspect judging
-itself*, it leaves no proof, and it silently degrades as you add tools.
+### 2. Reads — what the agent *says*
 
-`saidso` is the backstop that runs in **code, not in the prompt**: it assumes
-the model *will* hallucinate and refuses to let the hallucination cause harm.
+A native-audio model can't have its mouth gated. So `saidso` doesn't gate it — it
+builds the consequential line from grounded data and refuses if any fact is made
+up. Your TTS speaks the verified string (saidso is **TTS-agnostic** — it never
+produces audio).
 
-## What it does, on every call
+```python
+from saidso import render_spoken, fact
 
-1. **Block** — if an argument isn't grounded in the transcript, the function
-   body never runs.
-2. **Steer back** — instead of a dead error, it returns a structured message
-   that makes the agent *re-ask* the caller and try again, in-conversation.
-3. **Attest** — for every argument that does go through, it writes a receipt:
-   *this value came from these words, at this timestamp, with this confidence.*
-
-```text
-agent -> register_patient(name='John Doe', dob='1990-01-01')
-BLOCKED: body never ran.
-steer-back: "I don't have your name and your date of birth from what the
-             caller said. Ask the caller for your name and your date of
-             birth, then try again. Do not guess or fill in placeholder values."
+line = render_spoken(
+    "You're booked with {doctor} at {time}.",
+    ledger=tool_ledger,
+    doctor=fact("Dr. Rashmi", ("list_doctors", "doctor_name")),
+    time=fact(slot_start, ("get_slots", "slot_start"),
+              normalize="datetime-minute", render=to_clock),
+)
+# -> "You're booked with Dr. Rashmi at 5:00 PM."   (every fact verified)
+# a fabricated value -> raises UngroundedSpeech, produces nothing
 ```
 
-## The policies
+---
+
+## The policies (`@grounded`)
 
 | Policy | A value is grounded if… |
 |---|---|
@@ -66,55 +88,65 @@ steer-back: "I don't have your name and your date of birth from what the
 | `Policy.CALLER_ID` | it matches trusted call metadata, not what was spoken |
 | `Policy.INFERABLE` | it's derivable from context ("tomorrow" + clock) or was spoken |
 
-## Install
+---
 
-```bash
-pip install saidso          # zero required dependencies
-pip install saidso[fast]    # add rapidfuzz for faster matching
-```
+## Block → steer back → attest
 
-`saidso` works with no third-party packages (stdlib `difflib` fallback) and
-uses `rapidfuzz` automatically if it's installed.
+On every guarded call, `saidso`:
 
-## Usage
+1. **Blocks** — an ungrounded argument means the body never runs.
+2. **Steers back** — returns a `SteerBack` whose `.message` makes the agent
+   *re-ask* the caller in-conversation (or set `raise_on_block=True` to raise).
+3. **Attests** — every value that passes writes a receipt: *this value came from
+   these words, at this time, with this confidence.*
 
 ```python
 from saidso import grounded, Policy, Transcript, call_context, AttestationLog
 
 @grounded(name=Policy.SPOKEN, dob=Policy.SPOKEN)
-def register_patient(name, dob):
-    ...  # your real DB write
+def register_patient(name, dob): ...   # your real DB write
 
-# Feed the conversation as it happens:
 tr = Transcript()
-tr.add_user("Hi, I'd like to book an appointment.")
+tr.add_user("It's Maria Gomez, born January first nineteen ninety.")
+audit = AttestationLog(path="audit.jsonl")          # optional audit trail
 
-log = AttestationLog(path="attestations.jsonl")  # optional audit trail
-
-with call_context(tr, ledger=log):
-    out = register_patient(name="John Doe", dob="1990-01-01")
+with call_context(tr, ledger=audit):
+    out = register_patient(name="Maria Gomez", dob="1990-01-01")  # ✅ commits
 
 if getattr(out, "blocked", False):
-    say_to_caller(out.message)   # the agent re-asks; nothing was committed
+    say_to_caller(out.message)          # ❌ nothing was committed; agent re-asks
 ```
 
-When grounding passes, the body runs normally and an attestation is recorded.
-By default a block **returns** a `SteerBack` (so it slots straight into a
-tool-use loop); pass `GroundingConfig(raise_on_block=True)` to raise instead.
+---
 
-### Plugging into your agent framework
+## Observability
 
-- **Raw OpenAI / Anthropic tool-use** — return `steer.to_tool_message()` as the
-  tool result so the model self-corrects. See
-  [`examples/openai_tooluse.py`](examples/openai_tooluse.py).
-- **LiveKit / Pipecat / Vapi** — keep a `Transcript` in sync with the
-  session's transcription events and open a `call_context`. See
-  [`examples/livekit_adapter.py`](examples/livekit_adapter.py).
+Every decision emits a structured event on the `saidso` logger. A zero-dependency
+console makes it readable:
+
+```python
+from saidso import enable_pretty_logging, EventRecorder, summary
+
+enable_pretty_logging()             # colored ✓/✗ live stream (auto-off when not a TTY)
+rec = EventRecorder().attach()
+# ... run your agent ...
+print(summary(audit, rec))
+```
+
+```
+13:38:15 ✓ grounded register_patient  name, dob
+13:38:15 ✗ blocked  book_appointment  slot_start
+┌─ saidso — 1 grounded, 1 blocked
+  ✓ register_patient       name, dob
+  ✗ book_appointment       slot_start
+└──────────────────────────────────────
+```
+
+---
 
 ## Regression harness (CI gate)
 
-Assert that invented values are blocked and real ones commit — turn "we hope it
-doesn't fabricate" into a test:
+Turn "we hope it doesn't fabricate" into a test:
 
 ```python
 from saidso.testing import GroundingCase
@@ -124,47 +156,31 @@ def test_invented_dob_is_blocked():
         .user("Hi, I'd like an appointment")
         .call(name="John Doe", dob="1990-01-01")
         .assert_blocked("name", "dob"))
-
-def test_real_values_commit():
-    (GroundingCase(register_patient)
-        .user("It's Maria Gomez, born January first nineteen ninety")
-        .call(name="Maria Gomez", dob="1990-01-01")
-        .assert_grounded())
 ```
 
-## Production behaviour
+---
 
-- **Fail-closed.** If a grounding check ever raises, the argument is treated as
-  ungrounded (blocked) and the error is logged — a crash never opens the gate.
-- **Validated at import time.** A policy naming a non-existent parameter raises
+## Why it's production-grade
+
+- **Fail-closed** — if a check ever raises, the value is treated as ungrounded; a
+  crash never opens the gate.
+- **Validated at import time** — a policy naming a non-existent parameter raises
   immediately, so a typo can't silently leave a real argument unguarded.
-- **No silent over-matching.** Numbers must match as whole values (`"2"` is not
-  grounded by `"20"`); short names require exact word matches; `date`, `int`,
-  `float`, `bool` arguments are coerced deterministically.
-- **Observability.** Blocks and errors log under the `saidso` logger.
+- **Deterministic & fast** — pure Python, in-process; a write check is ~12µs
+  (~1/2000th of a single backend call). No perceptible latency in a voice agent.
+- **Zero required dependencies** — `rapidfuzz` used if present, stdlib `difflib`
+  otherwise. Ships `py.typed`.
+- **Model- & platform-agnostic** — no model SDK is imported anywhere. Works with
+  Gemini Live, OpenAI Realtime, cascaded STT→LLM→TTS pipelines, or text agents.
 
-Tune thresholds or switch to raising via `GroundingConfig`:
+---
 
-```python
-from saidso import GroundingConfig, Policy
-cfg = GroundingConfig(thresholds={Policy.SPOKEN: 0.9}, raise_on_block=True)
+## Examples & docs
 
-@grounded(cfg, name=Policy.SPOKEN)
-def book(name): ...
-```
-
-## Run the demo
-
-```bash
-python examples/john_doe_demo.py
-```
-
-## Roadmap
-
-The MVP is deterministic-first and intentionally small. Planned next:
-verifier-model escalation for ambiguous cases, the **anti-priming prompt
-compiler**, the **hallucination regression harness** (pytest-style CI gate),
-and first-class framework adapters. See [`Docs/ROADMAP.md`](Docs/ROADMAP.md).
+- [`examples/quickstart.py`](examples/quickstart.py) — writes, reads, and observability in one file.
+- [`examples/openai_tooluse.py`](examples/openai_tooluse.py) — raw OpenAI tool-use adapter.
+- [`examples/livekit_adapter.py`](examples/livekit_adapter.py) — realtime voice adapter.
+- [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) — package layout + full vocabulary reference.
 
 ## Development
 

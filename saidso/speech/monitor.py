@@ -19,8 +19,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, List, Sequence
 
-from . import normalize as N
-from ._fuzz import ratio
+from .._matching import normalize as N
+from .._matching.fuzz import ratio
 
 _DEFAULT_TITLES = ("dr", "doctor", "prof", "professor")
 _MIN_TOKEN_LEN_FOR_FUZZY = 4

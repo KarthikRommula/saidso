@@ -27,10 +27,10 @@ from decimal import Decimal
 from typing import Any, List, Optional, Sequence
 
 from . import normalize as N
-from ._fuzz import partial_ratio, ratio
-from .policy import Policy
-from .result import GroundingResult, Span
-from .transcript import Transcript, Turn
+from .fuzz import partial_ratio, ratio
+from ..policy import Policy
+from ..result import GroundingResult, Span
+from ..transcript import Transcript, Turn
 
 # Tunables (conservative by default).
 _MIN_FUZZY_TOKEN = 0.85  # per-token fuzzy floor for name/text matching

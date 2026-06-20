@@ -35,16 +35,23 @@ from .provenance import (
     grounded_outputs,
     reconcile,
 )
+from .observe import EventRecorder, enable_pretty_logging, summary
 from .result import ArgFinding, GroundingResult, Span, SteerBack
 from .speech import (
+    BlockedFact,
+    Fact,
     SpokenName,
+    UngroundedSpeech,
     check_spoken_names,
+    fact,
     find_name_mentions,
     find_ungrounded_names,
+    render_spoken,
+    try_render_spoken,
 )
 from .transcript import AGENT, SYSTEM, USER, Transcript, Turn
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "grounded",
@@ -70,6 +77,12 @@ __all__ = [
     "reconcile",
     "Resolution",
     "Status",
+    "render_spoken",
+    "try_render_spoken",
+    "fact",
+    "Fact",
+    "UngroundedSpeech",
+    "BlockedFact",
     "find_ungrounded_names",
     "check_spoken_names",
     "find_name_mentions",
@@ -78,6 +91,9 @@ __all__ = [
     "ArgFinding",
     "Attestation",
     "AttestationLog",
+    "enable_pretty_logging",
+    "summary",
+    "EventRecorder",
     "DEFAULT_THRESHOLDS",
     "__version__",
 ]

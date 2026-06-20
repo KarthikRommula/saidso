@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "saidso"
-version = "0.3.0"
+version = "0.4.0"
 description = "A grounding firewall for action-taking AI agents: refuse any tool argument the user never actually said, with a transcript-linked audit trail."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,7 +19,14 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
 ]
 dependencies = []  # zero required deps; rapidfuzz used if present
 
@@ -27,9 +34,9 @@ dependencies = []  # zero required deps; rapidfuzz used if present
 fast = ["rapidfuzz>=3.0"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "rapidfuzz>=3.0"]
 
+# No GitHub repo — the PyPI project page (rendered from README.md) is the home.
 [project.urls]
-Homepage = "https://github.com/KarthikRommula/saidso"
-Issues = "https://github.com/KarthikRommula/saidso/issues"
+Homepage = "https://pypi.org/project/saidso/"
 
 [tool.hatch.build.targets.wheel]
 packages = ["saidso"]
