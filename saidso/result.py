@@ -3,7 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
+
+
+class ReasonCode(str, Enum):
+    """Machine-readable reason on every grounding decision (pass *and* block).
+
+    Surfaced on :class:`GroundingResult.code`, in :meth:`SteerBack.to_dict`, and in
+    the attestation record so observability (PostHog, dashboards) can route on a
+    stable code instead of parsing prose. ``OK_*`` codes are passes; the rest block.
+    """
+
+    OK_EXACT = "ok_exact"
+    OK_FUZZY = "ok_fuzzy"
+    OK_NORMALIZED = "ok_normalized"
+    OK_SINGLE = "ok_single"
+    OK_CONFIRMED = "ok_confirmed"
+    OK_CALLER_ID = "ok_caller_id"
+    OK_INFERRED = "ok_inferred"
+    NO_VALUE = "no_value"
+    NOT_IN_TRANSCRIPT = "not_in_transcript"
+    BELOW_THRESHOLD = "below_threshold"
+    WRONG_TOOL_SOURCE = "wrong_tool_source"
+    NORMALIZE_MISMATCH = "normalize_mismatch"
+    RETRACTED = "retracted"
+    REJECTED_READBACK = "rejected_readback"
+    NO_CONFIRMATION = "no_confirmation"
+    AMBIGUOUS = "ambiguous"
+    DUPLICATE = "duplicate"
+    STALE_PROVENANCE = "stale_provenance"
+    CHECK_ERROR = "check_error"
 
 
 @dataclass
@@ -39,6 +69,7 @@ class GroundingResult:
     reason: str = ""
     normalized: Any = None
     span: Span | None = None
+    code: str = ""  # machine-readable ReasonCode (set on pass and block)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +79,7 @@ class GroundingResult:
             "value": self.value,
             "normalized": self.normalized,
             "reason": self.reason,
+            "code": self.code,
             "span": self.span.to_dict() if self.span else None,
         }
 
@@ -98,26 +130,43 @@ class SteerBack:
     failed: list[ArgFinding] = field(default_factory=list)
     grounded: list[ArgFinding] = field(default_factory=list)
     message: str = ""
+    style: str = "default"  # "default" (developer-facing) | "spoken" (caller-facing)
+    code: str = ""  # machine-readable ReasonCode for the block (routing/observability)
 
     def __post_init__(self) -> None:
         if not self.message:
-            self.message = self._build_message()
+            self.message = (
+                self._build_spoken_message()
+                if self.style == "spoken"
+                else self._build_message()
+            )
 
-    def _build_message(self) -> str:
+    def _ask_phrase(self) -> str:
         phrases = [_phrase_for(f.name) for f in self.failed]
         if not phrases:
-            return f"Could not run {self.action}: an argument was not grounded."
+            return ""
         if len(phrases) == 1:
-            ask = phrases[0]
-        elif len(phrases) == 2:
-            ask = f"{phrases[0]} and {phrases[1]}"
-        else:
-            ask = ", ".join(phrases[:-1]) + f", and {phrases[-1]}"
+            return phrases[0]
+        if len(phrases) == 2:
+            return f"{phrases[0]} and {phrases[1]}"
+        return ", ".join(phrases[:-1]) + f", and {phrases[-1]}"
+
+    def _build_message(self) -> str:
+        ask = self._ask_phrase()
+        if not ask:
+            return f"Could not run {self.action}: an argument was not grounded."
         return (
             f"I don't have {ask} from what the caller said. "
             f"Ask the caller for {ask}, then try again. "
             f"Do not guess or fill in placeholder values."
         )
+
+    def _build_spoken_message(self) -> str:
+        """Caller-facing re-ask: no tool/id/internal vocabulary, safe to say aloud."""
+        ask = self._ask_phrase()
+        if not ask:
+            return "Sorry, could you say that again?"
+        return f"Sorry, could you give me {ask} again?"
 
     # -- adapters -------------------------------------------------------- #
 
@@ -126,6 +175,7 @@ class SteerBack:
             "action": self.action,
             "blocked": self.blocked,
             "message": self.message,
+            "code": self.code,
             "failed": [f.to_dict() for f in self.failed],
             "grounded": [f.to_dict() for f in self.grounded],
         }

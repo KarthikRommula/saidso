@@ -26,6 +26,7 @@ class CallContext:
     call_id: str | None = None
     ledger: Any = None  # AttestationLog | None (avoid import cycle)
     tools: Any = None  # provenance.ToolLedger | None (avoid import cycle)
+    seen_keys: set[Any] = field(default_factory=set)  # idempotency guard (this call)
 
 
 _CURRENT: contextvars.ContextVar[CallContext | None] = contextvars.ContextVar(

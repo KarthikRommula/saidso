@@ -22,11 +22,18 @@ Quick start::
 
 from __future__ import annotations
 
-from .attestation import Attestation, AttestationLog
+from ._matching.locale import EN, ES, Locale, get_locale
+from .attestation import (
+    Attestation,
+    AttestationLog,
+    AttestedWrite,
+    attest_action,
+    attested,
+)
 from .context import CallContext, call_context, get_context, reset_context, set_context
 from .grounding import GroundingBlocked, GroundingConfig, grounded
 from .observe import EventRecorder, enable_pretty_logging, summary
-from .policy import DEFAULT_THRESHOLDS, Policy
+from .policy import DEFAULT_THRESHOLDS, Policy, PolicySpec, as_spec
 from .provenance import (
     FromTool,
     Resolution,
@@ -36,40 +43,53 @@ from .provenance import (
     grounded_outputs,
     reconcile,
 )
-from .result import ArgFinding, GroundingResult, Span, SteerBack
+from .result import ArgFinding, GroundingResult, ReasonCode, Span, SteerBack
 from .speech import (
+    COMPLETION_CLAIMS,
     BlockedFact,
+    ClaimPattern,
     Fact,
     SpokenName,
+    UnattestedAction,
+    UnbackedClaim,
     UngroundedSpeech,
     check_spoken_names,
     fact,
     find_name_mentions,
     find_ungrounded_names,
+    reconcile_turn,
     render_spoken,
     try_render_spoken,
 )
 from .transcript import AGENT, SYSTEM, USER, Transcript, Turn
 
-__version__ = "0.4.7"
+__version__ = "0.5.0"
 
 __all__ = [
     "AGENT",
+    "COMPLETION_CLAIMS",
     "DEFAULT_THRESHOLDS",
+    "EN",
+    "ES",
     "SYSTEM",
     "USER",
     "ArgFinding",
     "Attestation",
     "AttestationLog",
+    "AttestedWrite",
     "BlockedFact",
     "CallContext",
+    "ClaimPattern",
     "EventRecorder",
     "Fact",
     "FromTool",
     "GroundingBlocked",
     "GroundingConfig",
     "GroundingResult",
+    "Locale",
     "Policy",
+    "PolicySpec",
+    "ReasonCode",
     "Resolution",
     "Span",
     "SpokenName",
@@ -78,8 +98,13 @@ __all__ = [
     "ToolLedger",
     "Transcript",
     "Turn",
+    "UnattestedAction",
+    "UnbackedClaim",
     "UngroundedSpeech",
     "__version__",
+    "as_spec",
+    "attest_action",
+    "attested",
     "call_context",
     "check_spoken_names",
     "enable_pretty_logging",
@@ -88,9 +113,11 @@ __all__ = [
     "find_ungrounded_names",
     "from_tool",
     "get_context",
+    "get_locale",
     "grounded",
     "grounded_outputs",
     "reconcile",
+    "reconcile_turn",
     "render_spoken",
     "reset_context",
     "set_context",

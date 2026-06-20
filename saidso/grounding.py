@@ -25,8 +25,8 @@ from typing import Any, Callable
 
 from ._matching import matcher
 from .context import CallContext, get_context
-from .policy import DEFAULT_THRESHOLDS, Policy
-from .result import ArgFinding, GroundingResult, SteerBack
+from .policy import DEFAULT_THRESHOLDS, Policy, PolicySpec, as_spec
+from .result import ArgFinding, GroundingResult, ReasonCode, SteerBack
 
 logger = logging.getLogger("saidso")
 
@@ -35,11 +35,28 @@ _OVERRIDE_KEYS = ("_context", "_transcript")
 
 @dataclass
 class GroundingConfig:
-    """Tunables for the firewall."""
+    """Tunables for the firewall.
+
+    - ``thresholds`` / ``raise_on_block`` / ``warn_on_missing_context`` — as before.
+    - ``enforce`` — when ``False``, run in **shadow mode**: a would-block is recorded
+      to the AttestationLog (``status="shadow_block"``) and logged, but the body runs
+      anyway. Calibrate thresholds against real traffic before enforcing.
+    - ``steer_style`` — ``"default"`` (developer-facing SteerBack) or ``"spoken"``
+      (caller-facing re-ask with no tool/id jargon, safe to say on a voice channel).
+    - ``idempotency_key`` — ``callable(args: dict) -> hashable``. After a guarded call
+      passes, a repeat with the same key **this call** is blocked as a duplicate,
+      de-risking recovery-injection loops that might double-fire a write.
+    - ``on_stale`` — how provenance grounding treats candidates from a ledger entry
+      past its TTL: ``"warn"`` (default), ``"block"``, or ``"ignore"``.
+    """
 
     thresholds: dict[Policy, float] | None = None
     raise_on_block: bool = False  # default: return SteerBack (slots into tool loops)
     warn_on_missing_context: bool = True
+    enforce: bool = True
+    steer_style: str = "default"
+    idempotency_key: Callable[[dict[str, Any]], Any] | None = None
+    on_stale: str = "warn"
 
     def threshold_for(self, policy: Policy) -> float:
         if self.thresholds and policy in self.thresholds:
@@ -57,22 +74,28 @@ class GroundingBlocked(Exception):
 
 def grounded(
     _config: GroundingConfig | None = None,
-    **arg_policies: Policy | str,
+    **arg_policies: Policy | str | PolicySpec,
 ) -> Callable[..., Any]:
     """Decorator factory. Map argument names to :class:`Policy` values.
 
-    Example::
+    A bare policy uses the default threshold; a :class:`PolicySpec` (from calling a
+    member, ``Policy.SPOKEN(normalize=..., threshold=...)``) adds per-argument tuning::
 
-        @grounded(name=Policy.SPOKEN, dob=Policy.SPOKEN, phone=Policy.CALLER_ID)
-        async def register_patient(name, dob, phone): ...
+        @grounded(
+            name=Policy.SPOKEN,
+            family_name=Policy.SPOKEN(normalize="spelled-name"),
+            gender=Policy.SPOKEN(normalize="phonetic", threshold=0.6),
+            phone=Policy.CALLER_ID,
+        )
+        async def register_patient(name, family_name, gender, phone): ...
     """
     config = _config or GroundingConfig()
     if not arg_policies:
         raise ValueError("@grounded requires at least one argument policy")
-    policies: dict[str, Policy] = {}
+    policies: dict[str, PolicySpec] = {}
     for name, value in arg_policies.items():
         try:
-            policies[name] = value if isinstance(value, Policy) else Policy(value)
+            policies[name] = as_spec(value)
         except ValueError as exc:  # unknown policy string
             raise ValueError(
                 f"@grounded: unknown policy {value!r} for argument {name!r}"
@@ -112,7 +135,8 @@ def grounded(
             if override_tr is not None:
                 ctx = CallContext(
                     transcript=override_tr, metadata=ctx.metadata, now=ctx.now,
-                    call_id=ctx.call_id, ledger=ctx.ledger,
+                    call_id=ctx.call_id, ledger=ctx.ledger, tools=ctx.tools,
+                    seen_keys=ctx.seen_keys,
                 )
 
             try:
@@ -131,11 +155,17 @@ def grounded(
 
             failed: list[ArgFinding] = []
             passed: list[ArgFinding] = []
-            for name, policy in policies.items():
+            for name, spec in policies.items():
+                policy = spec.policy
                 value = resolve(name)
+                threshold = (
+                    spec.threshold if spec.threshold is not None
+                    else config.threshold_for(policy)
+                )
                 try:
                     result = matcher.check(
-                        value, policy, ctx.transcript, ctx, config.threshold_for(policy)
+                        value, policy, ctx.transcript, ctx, threshold,
+                        normalize=spec.normalize,
                     )
                 except Exception as exc:  # fail closed: never let a crash open the gate
                     logger.exception(
@@ -145,12 +175,17 @@ def grounded(
                     result = GroundingResult(
                         grounded=False, confidence=0.0, policy=policy.value,
                         value=value, reason=f"grounding check errored: {exc}",
+                        code=ReasonCode.CHECK_ERROR.value,
                     )
                 finding = ArgFinding(name=name, result=result)
                 (passed if result.grounded else failed).append(finding)
 
-            if failed:
-                steer = SteerBack(action=fn.__name__, failed=failed, grounded=passed)
+            # Hard block — enforcing mode only. Shadow mode records and proceeds.
+            if failed and config.enforce:
+                steer = SteerBack(
+                    action=fn.__name__, failed=failed, grounded=passed,
+                    style=config.steer_style, code=_block_code(failed),
+                )
                 logger.info(
                     "blocked %s: ungrounded %s",
                     fn.__name__, [f.name for f in failed],
@@ -158,6 +193,26 @@ def grounded(
                            "saidso_args": [f.name for f in failed]},
                 )
                 return steer
+
+            # Idempotency: a repeat of an already-completed call is refused before
+            # the body runs again (de-risks recovery-injection double-fires).
+            dup = _idempotency_block(config, ctx, bound.arguments, fn.__name__)
+            if dup is not None:
+                return dup
+
+            if failed:  # shadow mode: record the would-block, then run the body
+                if ctx.ledger is not None:
+                    ctx.ledger.build(
+                        fn.__name__, failed + passed, call_id=ctx.call_id,
+                        status="shadow_block",
+                    )
+                logger.info(
+                    "shadow-blocked %s: ungrounded %s (enforce=False, running anyway)",
+                    fn.__name__, [f.name for f in failed],
+                    extra={"saidso_event": "shadow_block", "saidso_action": fn.__name__,
+                           "saidso_args": [f.name for f in failed]},
+                )
+                return _Pass(args, kwargs)
 
             if ctx.ledger is not None:
                 ctx.ledger.build(fn.__name__, passed, call_id=ctx.call_id)
@@ -196,6 +251,47 @@ def grounded(
         return swrapper
 
     return decorate
+
+
+def _block_code(failed: list[ArgFinding]) -> str:
+    """The machine-readable code for a multi-arg block (first failing arg's code)."""
+    for f in failed:
+        if f.result.code:
+            return f.result.code
+    return ReasonCode.NOT_IN_TRANSCRIPT.value
+
+
+def _idempotency_block(
+    config: GroundingConfig, ctx: CallContext, arguments: dict[str, Any], action: str
+) -> SteerBack | None:
+    """Refuse a repeat of an already-completed call (see GroundingConfig)."""
+    if config.idempotency_key is None:
+        return None
+    try:
+        key = config.idempotency_key(dict(arguments))
+    except Exception:  # a broken key function must not crash the call — skip dedupe
+        logger.exception("saidso: idempotency_key raised for %s; skipping dedupe.", action)
+        return None
+    if key is None:
+        return None
+    if key in ctx.seen_keys:
+        msg = (
+            "You're already set — I won't repeat that."
+            if config.steer_style == "spoken"
+            else f"{action} was already completed on this call (idempotency key seen); "
+            "not running it again."
+        )
+        logger.info(
+            "blocked duplicate %s", action,
+            extra={"saidso_event": "block", "saidso_action": action,
+                   "saidso_args": ["<duplicate>"]},
+        )
+        return SteerBack(
+            action=action, failed=[], message=msg,
+            style=config.steer_style, code=ReasonCode.DUPLICATE.value,
+        )
+    ctx.seen_keys.add(key)
+    return None
 
 
 @dataclass

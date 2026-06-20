@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.5.0
+
+Twelve gaps from a native-audio (Gemini 3.1 Live) deployment's incident report,
+closed as additive, backward-compatible API. Every existing call site, return shape
+and the `from saidso import …` surface are unchanged; new parameters/fields default
+to the prior behavior.
+
+### Reads — own the completion *claim*, not just the facts
+- **`render_spoken(..., requires_write=attested("book_appointment"))`** grounds the
+  *verb* of a spoken line against the AttestationLog: the named action must have a
+  successful attestation this call or the line is refused with `UnattestedAction`,
+  even when every `fact(...)` is grounded. Closes the "you *have* an appointment"
+  hole where the nouns were real but the write never ran.
+- **`reconcile_turn(agent_text, attestations=…, claim_patterns=COMPLETION_CLAIMS)`** —
+  a turn-level reconciler that flags spoken completion claims ("you're all set",
+  "you're registered", "booked") that no successful action backs. Broader than
+  `find_ungrounded_names` (which only catches titled names); makes a bespoke regex
+  watchdog deletable. Ships a default claim vocabulary; extend `ClaimPattern`s per app.
+- **`attest_action("transfer_to_human", metadata=…)`** records consequential,
+  *argument-less* actions (`end_call`, `transfer_to_human`) so the reconciler and
+  `requires_write` can cover them and the audit trail is complete.
+
+### Policies — make `SPOKEN` usable on real ASR
+- **Per-argument tuning via `Policy.SPOKEN(normalize=…, threshold=…)`** (a new
+  `PolicySpec`). `Policy("spoken")` value-lookup is unchanged.
+- **Normalizers on the `@grounded`/SPOKEN side**, matching what `@grounded_outputs`
+  already had: `normalize="spelled-name"` assembles "R O M U L A" → "Romula" (and
+  tolerates ASR drift), `normalize="phonetic"` grounds near-homophones the model
+  silently corrected ("mail" → "male") via Soundex, `normalize="spoken-date"` pins
+  the spoken-date path.
+- **Per-argument thresholds** — loosen `gender` without loosening `date_of_birth`.
+- **Read-back correction handling** — when the agent spells a value back wrong and the
+  caller corrects it ("no, it's R O M M U L A"), the leading "no" is recognized as a
+  rejection of the prior turn, so the *re-asserted* value grounds instead of being
+  dropped by the supersession guard. A genuine value-negation ("not X", "old X but
+  now Y") still retracts.
+
+### Rollout & ops
+- **Shadow mode** — `GroundingConfig(enforce=False)` records every would-block to the
+  AttestationLog (`status="shadow_block"`) **without blocking the call**, so policies
+  can be calibrated on real traffic before enforcing.
+- **Voice-safe SteerBack** — `GroundingConfig(steer_style="spoken")` emits a
+  caller-facing re-ask with no tool/id/internal jargon ("Sorry, could you give me your
+  date of birth again?").
+- **Idempotency / double-write guard** — `GroundingConfig(idempotency_key=lambda a: …)`
+  on `@grounded` / `@grounded_outputs` refuses a repeat of an already-committed call
+  this session (reason code `DUPLICATE`), de-risking recovery-injection loops.
+- **Provenance freshness/TTL** — `ToolLedger.record(tool, rows, ttl_s=…, source=…)`
+  plus `is_stale()`; `GroundingConfig(on_stale="warn"|"block"|"ignore")` controls how
+  grounding treats candidates from an expired (e.g. cache-seeded) ledger entry.
+- **Structured reason codes** — every decision (pass *and* block) now carries a
+  machine-readable `ReasonCode` on `GroundingResult.code` / `SteerBack.code` and in
+  the attestation record (`NOT_IN_TRANSCRIPT`, `BELOW_THRESHOLD`, `WRONG_TOOL_SOURCE`,
+  `NORMALIZE_MISMATCH`, `RETRACTED`, `DUPLICATE`, `STALE_PROVENANCE`, `OK_*`, …) for
+  tuning and observability.
+
+### Locale
+- **Locale-aware grounding** — `call_context(metadata={"locale": "es-ES"})` selects a
+  language's month names, relative dates and yes/no vocabulary. Ships **English**
+  (default; byte-for-byte the prior behavior) and **Spanish**; `get_locale()` resolves
+  BCP-47 tags and is extensible by registering another `Locale`. Accent-folding makes
+  "sí"/"mañana" robust to ASR.
+
 ## 0.4.6
 
 CLI: export docs to a folder.

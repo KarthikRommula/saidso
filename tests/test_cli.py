@@ -61,8 +61,17 @@ def test_docs_specific_topic(capsys):
 def test_docs_list(capsys):
     assert main(["docs", "--list"]) == 0
     out = capsys.readouterr().out
-    for topic in ("overview", "writes", "reads", "policies", "integrate"):
+    for topic in ("overview", "writes", "reads", "policies", "integrate", "changelog"):
         assert topic in out
+
+
+def test_docs_changelog_topic_reports_updates(capsys):
+    # The bundled changelog ships what was fixed / improved / added with the package.
+    assert main(["docs", "changelog"]) == 0
+    out = capsys.readouterr().out
+    assert "0.5.0" in out
+    for term in ("New", "Fixed", "render_spoken", "reconcile_turn", "shadow"):
+        assert term in out
 
 
 def test_docs_unknown_topic_errors(capsys):
@@ -75,10 +84,25 @@ def test_docs_dump_writes_all_pages(tmp_path, capsys):
     assert main(["docs", "--dump", str(dest)]) == 0
     written = {p.name for p in dest.glob("*.md")}
     # Every known topic is written, and pages are non-empty.
-    for topic in ("overview", "writes", "reads", "policies", "integrate"):
+    for topic in ("overview", "writes", "reads", "policies", "integrate", "changelog"):
         assert f"{topic}.md" in written
         assert (dest / f"{topic}.md").read_text(encoding="utf-8").strip()
     assert "Wrote" in capsys.readouterr().out
+
+
+def test_docs_dump_single_topic(tmp_path, capsys):
+    dest = tmp_path / "one"
+    assert main(["docs", "changelog", "--dump", str(dest)]) == 0
+    written = {p.name for p in dest.glob("*.md")}
+    assert written == {"changelog.md"}  # only the requested page, nothing else
+    assert (dest / "changelog.md").read_text(encoding="utf-8").strip()
+    assert "Wrote 1 docs" in capsys.readouterr().out
+
+
+def test_docs_dump_unknown_topic_errors(tmp_path, capsys):
+    assert main(["docs", "nope", "--dump", str(tmp_path)]) == 1
+    assert "no docs topic" in capsys.readouterr().err
+    assert not list(tmp_path.glob("*.md"))  # nothing written on a bad topic
 
 
 def test_upgrade_invokes_pip(monkeypatch, capsys):

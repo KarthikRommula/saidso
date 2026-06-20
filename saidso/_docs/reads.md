@@ -34,6 +34,41 @@ verified string. saidso never produces audio (TTS-agnostic).
 Use `try_render_spoken(...)` to get None instead of an exception (fall back to the
 model phrasing it, or re-ask).
 
+## Grounding the COMPLETION CLAIM (the verb, not just the nouns)
+
+A line like "you HAVE an appointment" asserts a write SUCCEEDED. Grounding the nouns
+(doctor, time) isn't enough — both can be real while book_appointment never ran.
+`requires_write=` reconciles the claim against the AttestationLog:
+
+  from saidso import render_spoken, fact, attested
+
+  line = render_spoken(
+      "You have an appointment with {doctor} at {time}.",
+      ledger=tool_ledger, attestations=attestation_log,
+      requires_write=attested("book_appointment", status="ok"),  # NEW
+      doctor=fact("Dr. Rashmi", ("list_doctors", "doctor_name")),
+      time=fact(slot_start, ("get_slots", "slot_start")),
+  )
+  # -> UnattestedAction if book_appointment did not succeed this call.
+
+## Catching unbacked claims POST-turn (reconcile_turn)
+
+For claims with no name and no fact — "you're all set", "you're registered",
+"booked" — reconcile the agent's whole turn against what actually succeeded:
+
+  from saidso import reconcile_turn, COMPLETION_CLAIMS
+
+  unbacked = reconcile_turn(agent_text, attestations=attestation_log,
+                            claim_patterns=COMPLETION_CLAIMS)
+  # -> [UnbackedClaim(claim="registered", expected_action=("register_patient",), ...)]
+  # inject a spoken correction; COMPLETION_CLAIMS is extensible per app.
+
+Argument-less actions (end_call, transfer_to_human) take no grounded args, so record
+them yourself so the two checks above can see them:
+
+  from saidso import attest_action
+  attest_action("transfer_to_human", metadata={"dest": "front_desk"})
+
 ## Note on single-candidate
 
 Unlike writes, `fact(...)` defaults to allow_single_candidate=False: speaking the

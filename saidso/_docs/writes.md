@@ -48,6 +48,34 @@ Normalizers (the `normalize=` arg): exact · casefold · e164 · datetime-minute
 money. They let "the same value, written differently" match while still blocking
 genuine fakes.
 
+## Freshness / TTL on provenance
+
+If you pre-seed or cache-rebuild the ledger, mark entries so stale provenance can be
+flagged or refused:
+
+  ledger.record("get_slots", rows, ttl_s=120, source="cache")
+  # GroundingConfig(on_stale="warn"|"block"|"ignore") — default "warn"
+
+## Idempotency (double-write guard)
+
+Recovery loops can re-fire the same write. Dedupe at the boundary:
+
+  from saidso import GroundingConfig
+  @grounded_outputs(
+      GroundingConfig(idempotency_key=lambda a: (a["patient_id"], a["slot_start"])),
+      slot_start=from_tool("get_slots", "slot_start"),
+  )
+  def book(patient_id, slot_start): ...
+  # a second success with the same key this session -> blocked (reason DUPLICATE)
+
+## Shadow mode (safe rollout)
+
+Calibrate a new policy on real traffic before it can block a live call:
+
+  @grounded(GroundingConfig(enforce=False), name=Policy.SPOKEN)
+  def register(name): ...
+  # every would-block is recorded (status="shadow_block"); the body still runs
+
 ## On a block
 
 Both decorators return a `SteerBack` (the body never ran). Feed `steer.message`

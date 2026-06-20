@@ -38,4 +38,5 @@ WILL hallucinate — it just refuses to let the hallucination matter.
   saidso docs writes          guard tool arguments
   saidso docs reads           guard spoken facts
   saidso docs policies        SPOKEN / CONFIRMED / CALLER_ID / INFERABLE
+  saidso docs changelog       what's new, fixed, and improved
   saidso docs --list          all topics

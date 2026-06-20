@@ -8,9 +8,11 @@ ninety" and "1990-01-01" become the same thing.
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import date, timedelta
 
 __all__ = [
+    "assemble_spelled",
     "date_components_present",
     "digits_only",
     "find_numbers",
@@ -19,8 +21,23 @@ __all__ = [
     "normalize_phone",
     "normalize_text",
     "phones_match",
+    "soundex",
+    "strip_accents",
     "words_to_int",
 ]
+
+
+def strip_accents(s: str) -> str:
+    """Drop combining diacritics so "sí"/"mañana" fold to "si"/"manana".
+
+    ASR transcribes accented words inconsistently; folding makes locale yes/no and
+    relative-date matching robust to that. ASCII text is returned unchanged.
+    """
+    if not s:
+        return ""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
+    )
 
 # --------------------------------------------------------------------------- #
 # Basic text
@@ -43,6 +60,71 @@ def normalize_text(s: str) -> str:
 def digits_only(s: str) -> str:
     """Every digit in ``s``, concatenated (number words first via caller)."""
     return re.sub(r"\D", "", s or "")
+
+
+def assemble_spelled(s: str) -> str:
+    """Join runs of single spelled-out letters into words.
+
+    A native-audio caller spells a surname letter-by-letter ("R O M U L A"); ASR
+    transcribes the letters separately, so the assembled word the model commits
+    ("Romula") never string-matches the transcript. This collapses consecutive
+    single-letter tokens into one token so the surname grounds::
+
+        assemble_spelled("my name is r o m u l a")  # -> "my name is romula"
+
+    Non-letter and multi-character tokens pass through unchanged. Used by the
+    ``normalize="spelled-name"`` SPOKEN normalizer; English-letter oriented.
+    """
+    toks = normalize_text(s).split()
+    out: list[str] = []
+    run: list[str] = []
+    for t in toks:
+        if len(t) == 1 and t.isalpha():
+            run.append(t)
+            continue
+        if run:
+            out.append("".join(run))
+            run = []
+        out.append(t)
+    if run:
+        out.append("".join(run))
+    return " ".join(out)
+
+
+_SOUNDEX_MAP = {
+    **dict.fromkeys("bfpv", "1"),
+    **dict.fromkeys("cgjkqsxz", "2"),
+    **dict.fromkeys("dt", "3"),
+    "l": "4",
+    **dict.fromkeys("mn", "5"),
+    "r": "6",
+}
+
+
+def soundex(s: str) -> str:
+    """Classic Soundex code for a token (deterministic phonetic key).
+
+    Near-homophones share a code, so the ``normalize="phonetic"`` SPOKEN normalizer
+    can ground an ASR homophone the model silently corrected — e.g. the caller's
+    transcribed "mail" against the committed "male" (both ``M400``). English-oriented.
+    Empty / non-alpha input returns ``""``.
+    """
+    letters = re.sub(r"[^a-z]", "", (s or "").lower())
+    if not letters:
+        return ""
+    first = letters[0].upper()
+    out = first
+    prev = _SOUNDEX_MAP.get(letters[0], "")
+    for ch in letters[1:]:
+        code = _SOUNDEX_MAP.get(ch, "")
+        if code and code != prev:
+            out += code
+            if len(out) == 4:
+                break
+        # 'h'/'w' are transparent (don't reset the previous code); vowels do reset.
+        if ch not in "hw":
+            prev = code
+    return (out + "000")[:4]
 
 
 # --------------------------------------------------------------------------- #
@@ -237,13 +319,17 @@ def _strip_ordinal_suffix(tok: str) -> str:
     return re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", tok)
 
 
-def normalize_date(s: str, now: date | None = None) -> str | None:
+def normalize_date(s: str, now: date | None = None, locale=None) -> str | None:
     """Best-effort parse of a date expression to ISO ``YYYY-MM-DD``.
 
-    Returns ``None`` if no confident date can be extracted.
+    Returns ``None`` if no confident date can be extracted. ``locale`` (a
+    :class:`saidso._matching.locale.Locale`) selects the month / ordinal / relative
+    tables; ``None`` uses the English defaults, byte-for-byte the prior behavior.
     """
     if not s:
         return None
+    months = locale.months if locale is not None else _MONTHS
+    ordinals = locale.ordinals if locale is not None else _ORDINALS
     raw = s.strip().lower()
 
     m = _ISO_RE.search(raw)
@@ -259,33 +345,34 @@ def normalize_date(s: str, now: date | None = None) -> str | None:
         return _iso(y, mo, d)
 
     # relative
-    rel = _relative_date(raw, now)
+    rel = _relative_date(raw, now, locale)
     if rel:
         return rel.isoformat()
 
-    # textual: month + day + year
-    norm = normalize_text(_strip_ordinal_suffix(raw))
+    # textual: month + day + year. Accent-fold so "septiembre" matches even when ASR
+    # drops/keeps diacritics inconsistently.
+    norm = strip_accents(normalize_text(_strip_ordinal_suffix(raw)))
     toks = norm.split()
 
     month = None
     for t in toks:
-        if t in _MONTHS:
-            month = _MONTHS[t]
+        if t in months:
+            month = months[t]
             break
     if month is None:
         return None
 
     day = None
     for t in toks:
-        if t in _ORDINALS:
-            day = _ORDINALS[t]
+        if t in ordinals:
+            day = ordinals[t]
             break
         if t.isdigit() and 1 <= int(t) <= 31:
             day = int(t)
             break
     # ordinal phrases like "twenty first"
     if day is None:
-        for ord_word, val in _ORDINALS.items():
+        for ord_word, val in ordinals.items():
             if "-" in ord_word and ord_word.replace("-", " ") in norm:
                 day = val
                 break
@@ -298,45 +385,57 @@ def normalize_date(s: str, now: date | None = None) -> str | None:
     return None
 
 
-def date_components_present(iso: str, text: str) -> bool:
+def date_components_present(iso: str, text: str, locale=None) -> bool:
     """True if the year, month and day of ``iso`` all appear in ``text``.
 
     Robust fallback when full date parsing of the transcript is too brittle:
-    we just confirm each piece was actually spoken.
+    we just confirm each piece was actually spoken. ``locale`` selects the month /
+    ordinal names; ``None`` uses English.
     """
     try:
         y, mo, d = (int(x) for x in iso.split("-"))
     except Exception:
         return False
-    norm = normalize_text(_strip_ordinal_suffix(text))
+    months = locale.months if locale is not None else _MONTHS
+    ordinals = locale.ordinals if locale is not None else _ORDINALS
+    norm = strip_accents(normalize_text(_strip_ordinal_suffix(text)))
 
     year_ok = y in find_years(text)
     if not year_ok:
         year_ok = re.search(rf"\b{y}\b", norm) is not None
 
-    month_names = {k for k, v in _MONTHS.items() if v == mo}
+    month_names = {strip_accents(k) for k, v in months.items() if v == mo}
     month_ok = any(re.search(rf"\b{name}\b", norm) for name in month_names)
     if not month_ok:
         month_ok = re.search(rf"\b0?{mo}\b", norm) is not None
 
     day_ok = re.search(rf"\b0?{d}\b", norm) is not None
     if not day_ok:
-        day_words = {k for k, v in _ORDINALS.items() if v == d}
+        day_words = {strip_accents(k) for k, v in ordinals.items() if v == d}
         day_ok = any(w.replace("-", " ") in norm for w in day_words)
-        if not day_ok:
+        if not day_ok and locale is None:
             cardinal = _int_to_words(d)
             day_ok = cardinal in norm
 
     return year_ok and month_ok and day_ok
 
 
-def _relative_date(raw: str, now: date | None) -> date | None:
-    if "today" in raw:
-        return now or date.today()
-    if "tomorrow" in raw:
-        return (now or date.today()) + timedelta(days=1)
-    if "yesterday" in raw:
-        return (now or date.today()) - timedelta(days=1)
+def _relative_date(raw: str, now: date | None, locale=None) -> date | None:
+    base = now or date.today()
+    if locale is None:  # English default — exact historical substring behavior
+        if "today" in raw:
+            return base
+        if "tomorrow" in raw:
+            return base + timedelta(days=1)
+        if "yesterday" in raw:
+            return base - timedelta(days=1)
+        return None
+    folded = strip_accents(raw)
+    delta = {"today": 0, "tomorrow": 1, "yesterday": -1}
+    for word, kind in locale.relative.items():
+        w = strip_accents(word)
+        if re.search(rf"(?<!\w){re.escape(w)}(?!\w)", folded):
+            return base + timedelta(days=delta.get(kind, 0))
     return None
 
 

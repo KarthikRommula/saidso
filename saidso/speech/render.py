@@ -94,6 +94,31 @@ class UngroundedSpeech(Exception):
         super().__init__(f"refusing to speak ungrounded fact(s): {names}")
 
 
+class UnattestedAction(UngroundedSpeech):
+    """Raised when a spoken completion claim is not backed by a successful write.
+
+    ``render_spoken(..., requires_write=attested("book_appointment"))`` grounds the
+    *verb* of the line ("you *have* an appointment") against the AttestationLog, not
+    just the nouns against the ToolLedger. If the required action did not succeed this
+    call, the line is refused even when every ``fact(...)`` placeholder is grounded —
+    because the sentence asserts a completed action that never happened.
+    """
+
+    def __init__(self, action: str, status: str) -> None:
+        self.action = action
+        self.status = status
+        # Reuse the UngroundedSpeech contract: a single synthetic blocked "fact".
+        blocked = [BlockedFact(
+            name=f"requires_write:{action}", value=action,
+            reason=f"no attested {action!r} with status {status!r} this call",
+        )]
+        Exception.__init__(
+            self, f"refusing to speak: completion claim requires a successful "
+            f"{action!r} ({status!r}) but none is attested this call"
+        )
+        self.blocked = blocked
+
+
 def _field_names(template: str) -> list[str]:
     """The simple ``{name}`` placeholders in ``template`` (rejects ``{a.b}`` / ``{0}``)."""
     names: list[str] = []
@@ -108,7 +133,14 @@ def _field_names(template: str) -> list[str]:
     return names
 
 
-def render_spoken(template: str, *, ledger: Any = None, **facts: Fact) -> str:
+def render_spoken(
+    template: str,
+    *,
+    ledger: Any = None,
+    attestations: Any = None,
+    requires_write: Any = None,
+    **facts: Fact,
+) -> str:
     """Render ``template`` using only facts verified against tool output.
 
     Every ``{name}`` placeholder must have a matching ``name=fact(...)`` keyword, and
@@ -117,10 +149,37 @@ def render_spoken(template: str, *, ledger: Any = None, **facts: Fact) -> str:
     the fail-closed provenance engine. On a pass the *canonical* tool value is rendered
     and substituted; if ANY fact fails, :class:`UngroundedSpeech` is raised and nothing
     is returned. The result is safe to hand to any TTS — saidso never speaks.
+
+    ``requires_write=attested("book_appointment")`` additionally grounds the line's
+    *completion claim*: the named action must have a matching attestation in
+    ``attestations`` (an :class:`~saidso.AttestationLog`; falls back to the active
+    ``call_context``'s ledger) this call, else :class:`UnattestedAction` is raised —
+    even when every fact is grounded. Use it for lines that assert a write succeeded
+    ("you *have* an appointment"), so saidso owns the verb, not just the nouns.
     """
+    ctx = None
     if ledger is None:
         ctx = get_context()
         ledger = getattr(ctx, "tools", None) if ctx else None
+
+    # Completion-claim gate (the "verb"): checked before the facts (the "nouns").
+    if requires_write is not None:
+        log = attestations
+        if log is None:
+            ctx = ctx if ctx is not None else get_context()
+            log = getattr(ctx, "ledger", None) if ctx else None
+        ok = bool(
+            log is not None
+            and getattr(log, "has", None)
+            and log.has(requires_write.action, status=requires_write.status)
+        )
+        if not ok:
+            logger.info(
+                "refused unattested completion claim: %s", requires_write.action,
+                extra={"saidso_event": "block", "saidso_action": "speak",
+                       "saidso_args": [f"requires_write:{requires_write.action}"]},
+            )
+            raise UnattestedAction(requires_write.action, requires_write.status)
 
     fields = _field_names(template)
     missing = [f for f in fields if f not in facts]
@@ -171,13 +230,24 @@ def render_spoken(template: str, *, ledger: Any = None, **facts: Fact) -> str:
     return out
 
 
-def try_render_spoken(template: str, *, ledger: Any = None, **facts: Fact) -> str | None:
+def try_render_spoken(
+    template: str,
+    *,
+    ledger: Any = None,
+    attestations: Any = None,
+    requires_write: Any = None,
+    **facts: Fact,
+) -> str | None:
     """Like :func:`render_spoken`, but return ``None`` instead of raising on a block.
 
-    Convenient for "speak the deterministic line if every fact is grounded, otherwise
-    fall back" — e.g. let the model phrase it, or re-ask.
+    Convenient for "speak the deterministic line if every fact is grounded (and the
+    required write succeeded), otherwise fall back" — e.g. let the model phrase it, or
+    re-ask. Catches both :class:`UngroundedSpeech` and :class:`UnattestedAction`.
     """
     try:
-        return render_spoken(template, ledger=ledger, **facts)
+        return render_spoken(
+            template, ledger=ledger, attestations=attestations,
+            requires_write=requires_write, **facts,
+        )
     except UngroundedSpeech:
         return None
