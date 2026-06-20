@@ -264,19 +264,19 @@ def test_docs_renders_with_color(monkeypatch, capsys):
 
 
 def test_upgrade_reports_when_pip_missing(monkeypatch, capsys):
-    def boom(cmd):
+    def boom(*args, **kwargs):
         raise OSError("no pip here")
 
-    monkeypatch.setattr("saidso.cli.subprocess.call", boom)
+    monkeypatch.setattr("saidso.cli.subprocess.Popen", boom)
     assert main(["upgrade"]) == 1
     assert "could not run pip" in capsys.readouterr().err
 
 
 def test_uninstall_reports_when_pip_missing(monkeypatch, capsys):
-    def boom(cmd):
+    def boom(*args, **kwargs):
         raise OSError("no pip here")
 
-    monkeypatch.setattr("saidso.cli.subprocess.call", boom)
+    monkeypatch.setattr("saidso.cli.subprocess.Popen", boom)
     assert main(["uninstall"]) == 1
     assert "could not run pip" in capsys.readouterr().err
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1
+
+CLI polish — a quieter, self-cleaning `saidso upgrade` / `saidso uninstall`.
+
+### Fixed
+- **No more spurious pip warning on Windows self-upgrade.** When `saidso upgrade`
+  replaced the running package, pip printed `WARNING: Failed to remove contents in a
+  temporary directory '…pip-uninstall-…'. You can safely remove it manually.` — a
+  benign artifact of the running `saidso.exe` launcher locking its own old files
+  (the install always succeeded). The CLI now streams pip's output through a filter
+  that drops *only* that specific benign line (all real errors pass through), and
+  sweeps stale `pip-uninstall-*` backup dirs from `TEMP` after each run so they never
+  accumulate. Applies to both `saidso upgrade` and `saidso uninstall`.
+
 ## 0.5.0
 
 Twelve gaps from a native-audio (Gemini 3.1 Live) deployment's incident report,

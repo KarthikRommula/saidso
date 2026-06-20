@@ -108,11 +108,12 @@ def test_docs_dump_unknown_topic_errors(tmp_path, capsys):
 def test_upgrade_invokes_pip(monkeypatch, capsys):
     captured = {}
 
-    def fake_call(cmd):
+    def fake_run(cmd):
         captured["cmd"] = cmd
         return 0
 
-    monkeypatch.setattr("saidso.cli.subprocess.call", fake_call)
+    monkeypatch.setattr("saidso.cli._run_pip", fake_run)
+    monkeypatch.setattr("saidso.cli._cleanup_pip_temp", lambda: None)
     assert main(["upgrade"]) == 0
     cmd = captured["cmd"]
     assert cmd[:3] == [sys.executable, "-m", "pip"]
@@ -122,12 +123,47 @@ def test_upgrade_invokes_pip(monkeypatch, capsys):
 def test_uninstall_invokes_pip(monkeypatch, capsys):
     captured = {}
 
-    def fake_call(cmd):
+    def fake_run(cmd):
         captured["cmd"] = cmd
         return 0
 
-    monkeypatch.setattr("saidso.cli.subprocess.call", fake_call)
+    monkeypatch.setattr("saidso.cli._run_pip", fake_run)
+    monkeypatch.setattr("saidso.cli._cleanup_pip_temp", lambda: None)
     assert main(["uninstall"]) == 0
     cmd = captured["cmd"]
     assert cmd[:3] == [sys.executable, "-m", "pip"]
     assert "uninstall" in cmd and "-y" in cmd and "saidso" in cmd
+
+
+def test_run_pip_filters_benign_temp_warning(monkeypatch, capsys):
+    from saidso import cli
+
+    class FakeProc:
+        stdout = iter([
+            "Successfully installed saidso-0.5.0\n",
+            "  WARNING: Failed to remove contents in a temporary directory "
+            "'C:\\Temp\\pip-uninstall-xyz'.\n",
+            "  You can safely remove it manually.\n",
+        ])
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **k: FakeProc())
+    rc = cli._run_pip(["x", "-m", "pip"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Successfully installed saidso-0.5.0" in out      # real output kept
+    assert "Failed to remove contents" not in out            # benign warning dropped
+    assert "safely remove it manually" not in out
+
+
+def test_cleanup_pip_temp_removes_leftover(monkeypatch, tmp_path):
+    from saidso import cli
+
+    leftover = tmp_path / "pip-uninstall-abc123"
+    leftover.mkdir()
+    (leftover / "stuck.exe").write_text("x")
+    monkeypatch.setattr(cli.tempfile, "gettempdir", lambda: str(tmp_path))
+    cli._cleanup_pip_temp()
+    assert not leftover.exists()  # stale backup dir swept

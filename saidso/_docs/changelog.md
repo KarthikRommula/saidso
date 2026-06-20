@@ -3,6 +3,17 @@
 The in-package summary of saidso updates. Read it with `saidso docs changelog`;
 it's exported alongside every other page by `saidso docs --dump`.
 
+## 0.5.1 — quieter self-upgrade
+
+### Fixed
+
+- `saidso upgrade` / `saidso uninstall` no longer surface pip's benign Windows
+  warning "Failed to remove contents in a temporary directory '…pip-uninstall-…'.
+  You can safely remove it manually." It came from the running saidso launcher
+  locking its own old files (the install still succeeded). The CLI now filters only
+  that specific line and sweeps stale pip-uninstall-* backup dirs from TEMP after
+  each run.
+
 ## 0.5.0 — twelve gaps from a native-audio deployment
 
 A Gemini 3.1 Live clinic-receptionist filed a detailed incident report; this release

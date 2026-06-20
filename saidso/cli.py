@@ -10,8 +10,10 @@ small: report the version, and scaffold a runnable quickstart you can explore.
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess  # nosec B404 - only used for the fixed `pip install --upgrade` argv
 import sys
+import tempfile
 from importlib import resources
 from pathlib import Path
 
@@ -21,6 +23,54 @@ from .observe import _enable_windows_ansi, _supports_color
 _TEMPLATES = "_templates"
 _DOCS = "_docs"
 _DEFAULT_TOPIC = "overview"
+
+
+def _is_benign_pip_noise(line: str) -> bool:
+    """True for pip's harmless Windows "couldn't delete the temp backup" warning.
+
+    On a self-upgrade the running ``saidso.exe`` launcher locks its own old files,
+    so pip installs the new version fine but can't delete its ``pip-uninstall-*``
+    backup dir. The operation succeeded; only the cleanup of a locked file failed —
+    so we drop this specific line (and handle the leftover in :func:`_cleanup_pip_temp`).
+    """
+    low = line.lower()
+    if "failed to remove contents in a temporary directory" in low and "pip-uninstall" in low:
+        return True
+    return low.strip() == "you can safely remove it manually."
+
+
+def _cleanup_pip_temp() -> None:
+    """Best-effort sweep of leftover ``pip-uninstall-*`` backup dirs in TEMP.
+
+    The current run's backup may still be locked (we're the running process), but
+    this clears stale ones from prior self-upgrades so they never accumulate. A
+    no-op on platforms where pip leaves nothing behind.
+    """
+    try:
+        tmp = Path(tempfile.gettempdir())
+        for d in tmp.glob("pip-uninstall-*"):
+            shutil.rmtree(d, ignore_errors=True)
+    except OSError:  # never let cleanup turn into a failure
+        pass
+
+
+def _run_pip(cmd: list[str]) -> int:
+    """Run a fixed pip ``cmd``, streaming output but filtering the benign warning.
+
+    Piping pip's output also makes it use plain, non-interactive formatting (no
+    carriage-return progress bars), so line filtering stays clean. Real errors and
+    all other output pass through unchanged.
+    """
+    # Fixed argv (no shell, no user input) — safe by construction.
+    proc = subprocess.Popen(  # nosec B603
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    if proc.stdout is not None:
+        for line in proc.stdout:
+            if not _is_benign_pip_noise(line):
+                sys.stdout.write(line)
+    return proc.wait()
 
 
 def _write_templates(dest: Path) -> list[str]:
@@ -134,8 +184,7 @@ def _cmd_upgrade(_args: argparse.Namespace) -> int:
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "saidso"]
     print("$ " + " ".join(cmd))
     try:
-        # Fixed argv (no shell, no user input) — safe by construction.
-        return subprocess.call(cmd)  # nosec B603
+        rc = _run_pip(cmd)
     except OSError as exc:  # pip not available in this environment
         print(
             f"saidso: could not run pip ({exc}). Upgrade manually with "
@@ -143,6 +192,8 @@ def _cmd_upgrade(_args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    _cleanup_pip_temp()
+    return rc
 
 
 def _cmd_uninstall(_args: argparse.Namespace) -> int:
@@ -150,8 +201,7 @@ def _cmd_uninstall(_args: argparse.Namespace) -> int:
     cmd = [sys.executable, "-m", "pip", "uninstall", "-y", "saidso"]
     print("$ " + " ".join(cmd))
     try:
-        # Fixed argv (no shell, no user input) — safe by construction.
-        return subprocess.call(cmd)  # nosec B603
+        rc = _run_pip(cmd)
     except OSError as exc:  # pip not available in this environment
         print(
             f"saidso: could not run pip ({exc}). Uninstall manually with "
@@ -159,6 +209,8 @@ def _cmd_uninstall(_args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    _cleanup_pip_temp()
+    return rc
 
 
 def build_parser() -> argparse.ArgumentParser:
