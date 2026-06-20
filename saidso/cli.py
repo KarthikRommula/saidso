@@ -10,6 +10,7 @@ small: report the version, and scaffold a runnable quickstart you can explore.
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from importlib import resources
 from pathlib import Path
@@ -51,6 +52,21 @@ def _cmd_version(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_upgrade(_args: argparse.Namespace) -> int:
+    """Upgrade the installed saidso to the latest release on PyPI, via pip."""
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "saidso"]
+    print("$ " + " ".join(cmd))
+    try:
+        return subprocess.call(cmd)
+    except OSError as exc:  # pip not available in this environment
+        print(
+            f"saidso: could not run pip ({exc}). Upgrade manually with "
+            "`pip install --upgrade saidso`.",
+            file=sys.stderr,
+        )
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="saidso",
@@ -59,10 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-V", "--version", action="version", version=f"saidso {__version__}"
     )
-    sub = parser.add_subparsers(dest="command")
+    sub = parser.add_subparsers(dest="command", title="commands", metavar="<command>")
 
     sub.add_parser("version", help="print the installed saidso version") \
         .set_defaults(func=_cmd_version)
+
+    sub.add_parser("upgrade", help="upgrade saidso to the latest release on PyPI (via pip)") \
+        .set_defaults(func=_cmd_upgrade)
 
     qs = sub.add_parser(
         "quickstart",

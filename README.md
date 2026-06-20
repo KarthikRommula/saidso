@@ -180,7 +180,9 @@ def test_invented_dob_is_blocked():
 saidso is a library (it runs inside your agent), with a small CLI for convenience:
 
 ```bash
+saidso --help               # list all commands
 saidso --version            # or: saidso version
+saidso upgrade              # upgrade to the latest release on PyPI
 saidso quickstart           # scaffold a runnable demo + GETTING_STARTED.md
 saidso quickstart my-dir    # ...into a folder of your choice
 python -m saidso --version  # module form also works
