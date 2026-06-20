@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "saidso"
-version = "0.4.4"
+dynamic = ["version"]
 description = "A grounding firewall for action-taking AI agents: refuse any tool argument the user never actually said, with a transcript-linked audit trail."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -49,6 +49,10 @@ Homepage = "https://pypi.org/project/saidso/"
 
 [project.scripts]
 saidso = "saidso.cli:main"
+
+[tool.hatch.version]
+# Single source of truth: keep the version only in saidso/__init__.py.
+path = "saidso/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["saidso"]
