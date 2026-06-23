@@ -203,8 +203,8 @@ python -m saidso version    # module form also works
 | [`examples/john_doe_demo.py`](examples/john_doe_demo.py) | The core problem: naked agent vs. firewalled agent, side by side |
 | [`examples/quickstart.py`](examples/quickstart.py) | Writes, provenance, reads, and observability in one file |
 | [`examples/openai_tooluse.py`](examples/openai_tooluse.py) | Wiring saidso into an OpenAI-style tool-use loop |
-| [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) | Full API reference — decorators, policies, types, observability |
-| [`Docs/DESIGN.md`](Docs/DESIGN.md) | Internal design rationale and matching strategy |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full API reference — decorators, policies, types, observability |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Internal design rationale and matching strategy |
 
 ## Development
 
@@ -220,7 +220,7 @@ pip-audit                       # dependency CVEs (zero required deps)
 
 ## Contributing
 
-Contributions are welcome. See [`Docs/CONTRIBUTING.md`](Docs/CONTRIBUTING.md) for guidelines.
+Contributions are welcome. See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for guidelines.
 
 ## License
 

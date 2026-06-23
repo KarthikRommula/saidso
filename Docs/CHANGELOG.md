@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2
+
+Documentation and metadata — no code changes.
+
+### Fixed
+- Updated PyPI package description to cover both guarantees (writes and reads).
+- Fixed all `Docs/` path references to `docs/` (case-sensitive on GitHub/Linux) across README, CONTRIBUTING, PULL_REQUEST_TEMPLATE, issue templates, GETTING_STARTED, and changelog.
+- Removed stale `saidso[fast]` extra reference from bug report template (extra was removed in 0.5.x).
+- Fixed Changelog URL in `pyproject.toml` (`Docs/CHANGELOG.md` → `docs/CHANGELOG.md`).
+
 ## 0.5.1
 
 CLI polish — a quieter, self-cleaning `saidso upgrade` / `saidso uninstall`.
@@ -175,7 +185,7 @@ build the line from grounded data and speak it with your own TTS.
   is identical). Reads moved under a `speech/` subpackage (`render` = the
   deterministic guarantee, `monitor` = best-effort detection); the fuzzy-matching
   engine moved to a private `_matching/` subpackage (`matcher`, `normalize`,
-  `fuzz`). Added `Docs/ARCHITECTURE.md` (layout + vocabulary reference). The
+  `fuzz`). Added `docs/ARCHITECTURE.md` (layout + vocabulary reference). The
   quickstart demo now lives in `examples/quickstart.py` (it previously shadowed
   the package as a root-level `saidso.py`).
 

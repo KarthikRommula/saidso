@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "saidso"
 dynamic = ["version"]
-description = "A grounding firewall for action-taking AI agents: refuse any tool argument the user never actually said, with a transcript-linked audit trail."
+description = "Grounding firewall for action-taking AI agents — blocks hallucinated tool arguments and fabricated spoken facts in code, before they cause harm. Zero dependencies, model-agnostic."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -46,7 +46,7 @@ dev = [
 Homepage = "https://github.com/KarthikRommula/saidso"
 Source = "https://github.com/KarthikRommula/saidso"
 Issues = "https://github.com/KarthikRommula/saidso/issues"
-Changelog = "https://github.com/KarthikRommula/saidso/blob/main/Docs/CHANGELOG.md"
+Changelog = "https://github.com/KarthikRommula/saidso/blob/main/docs/CHANGELOG.md"
 
 [project.scripts]
 saidso = "saidso.cli:main"

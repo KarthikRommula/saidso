@@ -73,7 +73,7 @@ in `pyproject.toml`. Optional extras go in `[project.optional-dependencies]`.
 blocking, not passing, when the outcome is ambiguous or an error occurs.
 
 **No public API surface creep.** New symbols in `saidso/__init__.py` need a
-clear use-case and a corresponding entry in `Docs/ARCHITECTURE.md`.
+clear use-case and a corresponding entry in `docs/ARCHITECTURE.md`.
 
 ---
 
@@ -85,7 +85,7 @@ call is almost always enough.
 
 ## Requesting features
 
-Open an issue using the **Feature request** template. Check `Docs/ROADMAP.md`
+Open an issue using the **Feature request** template. Check `docs/ROADMAP.md`
 first; if your idea is already listed there, comment on the roadmap item instead
 of filing a new issue.
 
@@ -102,7 +102,7 @@ Releases are cut by the owner and publish automatically to PyPI via the
 
 ```bash
 # 1. Bump __version__ in saidso/__init__.py.
-# 2. Update Docs/CHANGELOG.md and saidso/_docs/changelog.md.
+# 2. Update docs/CHANGELOG.md and saidso/_docs/changelog.md.
 # 3. Commit, then tag.
 git tag v0.6.0
 git push origin v0.6.0

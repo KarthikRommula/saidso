@@ -1,7 +1,7 @@
 """Regression tests for the 0.5.0 feedback gaps (A-L).
 
 Each test reproduces the failing case the eigenh-connect-v2 incident report
-(`Docs/saidso-feedback.md`) describes, so the guarantees can't silently regress.
+(`docs/saidso-feedback.md`) describes, so the guarantees can't silently regress.
 """
 
 from __future__ import annotations

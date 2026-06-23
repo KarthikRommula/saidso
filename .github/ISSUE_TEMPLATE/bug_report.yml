@@ -50,7 +50,7 @@ body:
       label: rapidfuzz installed?
       description: "pip show rapidfuzz"
       options:
-        - "Yes (saidso[fast])"
+        - "Yes"
         - "No (stdlib difflib fallback)"
     validations:
       required: true

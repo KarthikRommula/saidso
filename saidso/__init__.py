@@ -63,7 +63,7 @@ from .speech import (
 )
 from .transcript import AGENT, SYSTEM, USER, Transcript, Turn
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 __all__ = [
     "AGENT",

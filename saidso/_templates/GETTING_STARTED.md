@@ -47,6 +47,6 @@ line = render_spoken("Booked with {doctor}.", ledger=ledger,
 
 ## Next steps
 
-- Full reference: `Docs/ARCHITECTURE.md` in the sdist, or the PyPI page.
+- Full reference: `docs/ARCHITECTURE.md` in the sdist, or the PyPI page.
 - Add a CI gate with `saidso.testing.GroundingCase`.
 - Turn on the audit trail: `AttestationLog(path="audit.jsonl")`.

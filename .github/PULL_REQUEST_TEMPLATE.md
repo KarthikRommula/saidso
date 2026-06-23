@@ -17,7 +17,7 @@
 - [ ] `pytest -q` passes (coverage ≥ 90%)
 - [ ] New behaviour is covered by tests
 - [ ] Zero required dependencies constraint is preserved (nothing added to `[project.dependencies]`)
-- [ ] Public API changes are reflected in `Docs/ARCHITECTURE.md`
+- [ ] Public API changes are reflected in `docs/ARCHITECTURE.md`
 
 ## Notes for the reviewer
 

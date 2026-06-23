@@ -3,6 +3,12 @@
 The in-package summary of saidso updates. Read it with `saidso docs changelog`;
 it's exported alongside every other page by `saidso docs --dump`.
 
+## 0.5.2 — documentation and metadata fix
+
+Fixed all broken `Docs/` path references to `docs/` across the project (case
+matters on GitHub/Linux). Updated PyPI package description to cover both
+guarantees: write grounding and spoken-fact grounding. No API or behavior changes.
+
 ## 0.5.1 — quieter self-upgrade
 
 ### Fixed
@@ -74,7 +80,7 @@ prior behavior.
 ## Earlier releases
 
 The full, detailed history (every point release) lives in the repository changelog,
-Docs/CHANGELOG.md. Recent highlights:
+docs/CHANGELOG.md. Recent highlights:
 
 - 0.4.x  CLI (`saidso docs`/`--dump`, `quickstart`, `upgrade`, `uninstall`),
          correction-aware grounding + the supersession/retraction guard, production
